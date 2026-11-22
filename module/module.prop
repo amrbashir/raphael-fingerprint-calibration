@@ -1,0 +1,6 @@
+id=raphael_fingerprint_calibration
+name=Raphael Fingerprint Calibration
+version=@VERSION@
+versionCode=@VERSION_CODE@
+author=amrbashir
+description=Fingerprint calibration for Raphael.

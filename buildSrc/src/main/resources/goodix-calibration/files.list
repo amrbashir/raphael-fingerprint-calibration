@@ -1,0 +1,14 @@
+java/com/goodix/fingerprint/BaikalConstants.java
+java/com/goodix/fingerprint/Constants.java
+java/com/goodix/fingerprint/ShenzhenConstants.java
+java/com/goodix/fingerprint/setting/DualRubberTestActivity.java
+java/com/goodix/fingerprint/setting/util/Util.java
+java/com/goodix/fingerprint/utils/BaikalTestResultParser.java
+java/com/goodix/fingerprint/utils/ShenzhenTestResultParser.java
+java/com/goodix/fingerprint/utils/TestParamEncoder.java
+java/com/goodix/fingerprint/utils/TestResultParser.java
+res/drawable-hdpi/button_round_shape.xml
+res/drawable-hdpi/button_round_shape_disabled.xml
+res/drawable-hdpi/button_round_shape_pressed.xml
+res/drawable-hdpi/entry_button_selector.xml
+res/layout/activity_dual_rubber_test.xml

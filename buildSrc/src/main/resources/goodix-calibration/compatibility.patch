@@ -1,0 +1,206 @@
+--- setting/DualRubberTestActivity.java
++++ setting/DualRubberTestActivity.java
+@@ -5,6 +5,7 @@
+ import android.os.Handler;
+ import android.os.Message;
+ import android.support.annotation.Nullable;
++import me.amrbashir.raphael.fingerprint.calibration.R;
+ import android.text.method.ScrollingMovementMethod;
+ import android.util.Log;
+ import android.util.SparseArray;
+@@ -86,6 +87,14 @@
+     private boolean run_perf = false;
+     private int testType = 0;
+     private GoodixFingerprintManager.TestCmdCallback mTestCmdCallback = new GoodixFingerprintManager.TestCmdCallback() { // from class: com.goodix.fingerprint.setting.DualRubberTestActivity.8
++        @Override
++        public void onSessionClosed() {
++            // The root transport cannot accept delayed stock commands after cancellation or failure.
++            DualRubberTestActivity.this.handler.removeCallbacksAndMessages(null);
++            DualRubberTestActivity.this.startBtn.setEnabled(false);
++            DualRubberTestActivity.this.nextBtn.setEnabled(false);
++        }
++
+         @Override // com.goodix.fingerprint.service.GoodixFingerprintManager.TestCmdCallback
+         public void onTestCmd(int i, HashMap<Integer, Object> map) {
+             int iIntValue;
+@@ -175,6 +184,7 @@
+     @Override // android.app.Activity
+     protected void onDestroy() {
+         super.onDestroy();
++        this.handler.removeCallbacksAndMessages(null);
+         this.mGoodixFingerprintManager.setSPMTMode(false);
+         this.mGoodixFingerprintManager.setHBMMode(false);
+         Util.writeBacklight("0xD01000");
+@@ -811,7 +821,7 @@
+                         } else {
+                             this.logBuffer.append(",");
+                         }
+-                        new byte[1][0] = 0;
++
+                         if (map.containsKey(Integer.valueOf(ShenzhenTestResultParser.TEST_TOKEN_FACTORY_RELATIVE_ILLUMINANCE))) {
+                             byte[] bArr = (byte[]) map.get(Integer.valueOf(ShenzhenTestResultParser.TEST_TOKEN_FACTORY_RELATIVE_ILLUMINANCE));
+                             Log.d(TAG, "onTestCmd cmdId = CMD_TEST_SZ_FT_CAPTURE_CHECKBOX relativeIlluminace length :" + bArr.length);
+@@ -998,7 +1008,7 @@
+                                         } else {
+                                             this.logBuffer.append(",");
+                                         }
+-                                        new byte[1][0] = 0;
++
+                                         if (map.containsKey(Integer.valueOf(ShenzhenTestResultParser.TEST_TOKEN_FACTORY_RELATIVE_ILLUMINANCE))) {
+                                             byte[] bArr2 = (byte[]) map.get(Integer.valueOf(ShenzhenTestResultParser.TEST_TOKEN_FACTORY_RELATIVE_ILLUMINANCE));
+                                             Log.d(TAG, "onTestCmd cmdId = CMD_TEST_SZ_FT_CAPTURE_CHECKBOX relativeIlluminace length :" + bArr2.length);
+--- setting/util/Util.java
++++ setting/util/Util.java
+@@ -59,14 +59,8 @@
+     }
+ 
+     public static void writeBacklight(String str) {
+-        try {
+-            Log.d(TAG, "writeBacklight, value = " + str);
+-            FileOutputStream fileOutputStream = new FileOutputStream(new File(brightnessNode));
+-            fileOutputStream.write(String.valueOf(str).getBytes("ASCII"));
+-            fileOutputStream.close();
+-        } catch (Exception e) {
+-            Log.e(TAG, "write file failed!" + e);
+-        }
++        Log.d(TAG, "writeBacklight, value = " + str);
++        com.goodix.fingerprint.service.GoodixFingerprintManager.current().writeBacklight(str);
+     }
+ 
+     public static void setScreenEffectForMIUI(int i, int i2) {
+--- utils/ShenzhenTestResultParser.java
++++ utils/ShenzhenTestResultParser.java
+@@ -160,6 +160,7 @@
+         HashMap<Integer, Object> map = new HashMap<>();
+         int i = 0;
+         int length = bArr != null ? bArr.length : 0;
++        // JADX lost the loop jumps after decoded values; preserve the original DEX control flow.
+         while (i < length) {
+             Log.d(TAG, "offset = " + i);
+             int iDecodeInt32 = TestResultParser.decodeInt32(bArr, i);
+@@ -176,7 +177,7 @@
+                     int i2 = i + 4;
+                     map.put(Integer.valueOf(iDecodeInt32), new String(bArr, i2, iDecodeInt33));
+                     i = i2 + iDecodeInt33;
+-                    break;
++                    continue;
+                 case TestResultParser.TEST_TOKEN_CHIP_ID /* 206 */:
+                 case TestResultParser.TEST_TOKEN_VENDOR_ID /* 207 */:
+                 case TestResultParser.TEST_TOKEN_PRODUCTION_DATE /* 209 */:
+@@ -186,7 +187,7 @@
+                     i += 4;
+                     map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt34));
+                     Log.d(TAG, "value = " + iDecodeInt34);
+-                    break;
++                    continue;
+                 default:
+                     switch (iDecodeInt32) {
+                         case TestResultParser.TEST_TOKEN_AD_VERSION /* 215 */:
+@@ -200,7 +201,7 @@
+                                     i += 4;
+                                     map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt35));
+                                     Log.d(TAG, "value = " + iDecodeInt35);
+-                                    break;
++                                    continue;
+                                 default:
+                                     switch (iDecodeInt32) {
+                                         case TestResultParser.TEST_TOKEN_BMP_DATA_WIDTH /* 690 */:
+@@ -209,7 +210,7 @@
+                                             i += 4;
+                                             map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt36));
+                                             Log.d(TAG, "value = " + iDecodeInt36);
+-                                            break;
++                                            continue;
+                                         default:
+                                             switch (iDecodeInt32) {
+                                                 case TEST_TOKEN_FRR_FAR_FUSION_DATA /* 727 */:
+@@ -233,7 +234,7 @@
+                                                     i += 4;
+                                                     map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt37));
+                                                     Log.d(TAG, "value = " + iDecodeInt37);
+-                                                    break;
++                                                    continue;
+                                                 default:
+                                                     switch (iDecodeInt32) {
+                                                         case TEST_TOKEN_FINGERPRINT_MESSAGE_TYPE /* 1303 */:
+@@ -245,7 +246,7 @@
+                                                             i += 4;
+                                                             map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt38));
+                                                             Log.d(TAG, "value = " + iDecodeInt38);
+-                                                            break;
++                                                            continue;
+                                                         default:
+                                                             switch (iDecodeInt32) {
+                                                                 case TEST_TOKEN_MAX_BAD_POINT_NUM /* 1400 */:
+@@ -267,7 +268,7 @@
+                                                                     i += 4;
+                                                                     map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt39));
+                                                                     Log.d(TAG, "value = " + iDecodeInt39);
+-                                                                    break;
++                                                                    continue;
+                                                                 case TEST_TOKEN_MAX_LIGHT_NOISET /* 1403 */:
+                                                                 case TEST_TOKEN_MAX_LIGHT_NOISES /* 1404 */:
+                                                                 case TEST_TOKEN_MIN_FLESH_TOUCH_DIFF /* 1405 */:
+@@ -287,7 +288,7 @@
+                                                                     map.put(Integer.valueOf(iDecodeInt32), Float.valueOf(fDecodeFloat));
+                                                                     i = i3 + iDecodeInt310;
+                                                                     Log.d(TAG, "value = " + fDecodeFloat);
+-                                                                    break;
++                                                                    continue;
+                                                                 default:
+                                                                     switch (iDecodeInt32) {
+                                                                         case TEST_TOKEN_EXPO_AUTO_CALIBRATION_FLAG /* 5308 */:
+@@ -325,7 +326,7 @@
+                                                                             i += 4;
+                                                                             map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt311));
+                                                                             Log.d(TAG, "value = " + iDecodeInt311);
+-                                                                            break;
++                                                                            continue;
+                                                                         case TEST_TOKEN_FACTORY_RELATIVE_ILLUMINANCE /* 5329 */:
+                                                                             break;
+                                                                         case TEST_TOKEN_FACTORY_RMS /* 5333 */:
+@@ -335,7 +336,7 @@
+                                                                             map.put(Integer.valueOf(iDecodeInt32), Double.valueOf(dDecodeDouble));
+                                                                             i = i4 + iDecodeInt312;
+                                                                             Log.d(TAG, "value = " + dDecodeDouble);
+-                                                                            break;
++                                                                            continue;
+                                                                         default:
+                                                                             switch (iDecodeInt32) {
+                                                                                 case 6002:
+@@ -344,7 +345,7 @@
+                                                                                     i += 4;
+                                                                                     map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt313));
+                                                                                     Log.d(TAG, "value = " + iDecodeInt313);
+-                                                                                    break;
++                                                                                    continue;
+                                                                                 default:
+                                                                                     switch (iDecodeInt32) {
+                                                                                         case TEST_TOKEN_SENSOR_COL /* 6027 */:
+@@ -353,7 +354,7 @@
+                                                                                             i += 4;
+                                                                                             map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt314));
+                                                                                             Log.d(TAG, "value = " + iDecodeInt314);
+-                                                                                            break;
++                                                                                            continue;
+                                                                                         default:
+                                                                                             switch (iDecodeInt32) {
+                                                                                                 case TEST_TOKEN_LONG_EXPOSURE_DATA /* 8000 */:
+@@ -372,7 +373,7 @@
+                                                                                                     i += 4;
+                                                                                                     map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt315));
+                                                                                                     Log.d(TAG, "value = " + iDecodeInt315);
+-                                                                                                    break;
++                                                                                                    continue;
+                                                                                                 default:
+                                                                                                     switch (iDecodeInt32) {
+                                                                                                         case 100:
+@@ -388,7 +389,7 @@
+                                                                                                             i += 4;
+                                                                                                             map.put(Integer.valueOf(iDecodeInt32), Integer.valueOf(iDecodeInt316));
+                                                                                                             Log.d(TAG, "value = " + iDecodeInt316);
+-                                                                                                            break;
++                                                                                                            continue;
+                                                                                                         case TestResultParser.TEST_TOKEN_BMP_DATA /* 701 */:
+                                                                                                         case TEST_TOKEN_FINGERPRINT_ENUMERATING_FID /* 8012 */:
+                                                                                                             break;
