@@ -123,33 +123,9 @@ dependencies {
 }
 
 val stockRecipe = rootProject.layout.projectDirectory.dir("buildSrc/src/main/resources/goodix-calibration")
-val stockPins = Properties().apply {
-    stockRecipe.file("toolchain.properties").asFile.inputStream().use { load(it) }
-}
-val jadxZip = rootProject.layout.projectDirectory.file(".gradle/goodix-calibration/jadx-${stockPins.getProperty("jadx.version")}.zip")
-val downloadJadx = tasks.register("downloadJadx") {
-    inputs.file(stockRecipe.file("toolchain.properties"))
-    outputs.file(jadxZip)
-
-    doLast {
-        val target = jadxZip.asFile
-        val expected = stockPins.getProperty("jadx.zip.sha256")
-        fun checksum(bytes: ByteArray) = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
-
-        if (target.exists()) {
-            check(checksum(target.readBytes()) == expected) { "JADX archive checksum mismatch." }
-        } else {
-            check(!gradle.startParameter.isOffline) { "Run once online to download pinned JADX." }
-            val connection = URI(stockPins.getProperty("jadx.url")).toURL().openConnection().apply {
-                connectTimeout = 15000
-                readTimeout = 60000
-            }
-            val bytes = connection.getInputStream().use { it.readBytes() }
-            check(checksum(bytes) == expected) { "JADX download checksum mismatch." }
-            target.parentFile.mkdirs()
-            target.writeBytes(bytes)
-        }
-    }
+val downloadJadx = tasks.register<DownloadJadx>("downloadJadx") {
+    recipe.set(stockRecipe)
+    cacheDirectory.set(rootProject.layout.projectDirectory.dir(".gradle/goodix-calibration"))
 }
 
 val generateStockGoodixSources = tasks.register<GenerateStockGoodixSources>("generateStockGoodixSources") {
@@ -157,7 +133,7 @@ val generateStockGoodixSources = tasks.register<GenerateStockGoodixSources>("gen
     description = "Generates the stock Goodix calibration sources and resources."
     recipe.set(stockRecipe)
     stockApk.set(stockRecipe.file("goodix_sz.apk"))
-    jadxArchive.set(layout.file(downloadJadx.map { jadxZip.asFile }))
+    jadxArchive.set(downloadJadx.flatMap { it.archive })
     javaOutput.set(layout.buildDirectory.dir("generated/goodix-calibration/java"))
     resOutput.set(layout.buildDirectory.dir("generated/goodix-calibration/res"))
     assetsOutput.set(layout.buildDirectory.dir("generated/goodix-calibration/assets"))
