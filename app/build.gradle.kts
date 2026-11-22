@@ -21,9 +21,13 @@ val moduleVersionCode = parts[1].toLong() * 10000 + parts[2].toLong() * 100 + (p
 
 require(moduleVersionCode in 1..Int.MAX_VALUE) { "Version code must fit in a positive signed 32-bit integer" }
 
-val signing = Properties().apply {
-    rootProject.file("keystore/keystore.properties").inputStream().use { load(it) }
-}
+val keystoreFilePath = System.getProperty("KEYSTORE_FILE_PATH")
+val hasSigningConfig = listOf(
+    keystoreFilePath,
+    System.getProperty("KEYSTORE_PASSWORD"),
+    System.getProperty("KEY_ALIAS"),
+    System.getProperty("KEY_PASSWORD"),
+).all { !it.isNullOrBlank() }
 
 android {
     enableKotlin = false
@@ -41,10 +45,12 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = rootProject.file(signing.getProperty("storeFile"))
-            storePassword = signing.getProperty("storePassword")
-            keyAlias = signing.getProperty("keyAlias")
-            keyPassword = signing.getProperty("keyPassword")
+            if (hasSigningConfig) {
+                storeFile = rootProject.file(keystoreFilePath!!)
+                storePassword = System.getProperty("KEYSTORE_PASSWORD")
+                keyAlias = System.getProperty("KEY_ALIAS")
+                keyPassword = System.getProperty("KEY_PASSWORD")
+            }
 
             enableV1Signing = false
             enableV2Signing = false
@@ -56,7 +62,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            if (hasSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -166,6 +174,10 @@ androidComponents {
         tasks.register<Zip>("assembleModule") {
             group = "build"
             description = "Builds the signed Raphael Fingerprint Calibration KernelSU module."
+
+            doFirst {
+                check(hasSigningConfig) { "Module packaging requires KEYSTORE_FILE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD in .env or JVM system properties." }
+            }
 
             archiveFileName.set("raphael-fingerprint-calibration-v$version.zip")
             destinationDirectory.set(rootProject.layout.buildDirectory)

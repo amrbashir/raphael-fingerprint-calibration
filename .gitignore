@@ -3,3 +3,7 @@
 .idea/
 .vscode/
 local.properties
+.env
+*.jks
+*.p12
+keystore.properties
