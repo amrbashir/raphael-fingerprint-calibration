@@ -29,10 +29,12 @@ case "$file_context" in
   *) abort "Could not determine the current vendor library SELinux label." ;;
 esac
 
-ui_print "Reboot, then tap Action to open fingerprint calibration."
-
 set_perm_recursive "$MODPATH/system" 0 0 0755 0644
 set_perm "$MODPATH/system/vendor/lib64/vendor.goodix.hardware.biometrics.fingerprint@2.1.so" 0 0 0644 "$file_context"
 set_perm "$MODPATH/action.sh" 0 0 0755
 set_perm "$MODPATH/uninstall.sh" 0 0 0755
 set_perm "$MODPATH/raphael-fingerprint-calibration.apk" 0 0 0644
+
+pm install -r --user 0 "$MODPATH/raphael-fingerprint-calibration.apk" || abort "Could not install the calibration app."
+
+ui_print "Reboot, grant the app root access in KernelSU's Superuser tab, then tap Action."
