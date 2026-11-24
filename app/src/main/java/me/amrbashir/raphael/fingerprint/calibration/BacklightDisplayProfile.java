@@ -3,20 +3,23 @@ package me.amrbashir.raphael.fingerprint.calibration;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Tested Soviet display controls; maps stock calibration commands without HAL calls. */
-final class SovietZundamonProfile implements DisplayProfile {
-    // Mapping reference: SOVIET-ANDROID/kernel_xiaomi_raphael,
-    // 01e68ce707b170cf6d4e1506a4b49defd1e3c2b3, sde_connector.c/dsi_panel.c.
+/** Shared decimal HBM/backlight controls for the supported panel and brightness families. */
+final class BacklightDisplayProfile implements DisplayProfile {
     static final String BASE = "/sys/devices/platform/soc/soc:qcom,dsi-display-primary";
-    static final String KERNEL = "4.14.357Soviet-Zundamon-v1.1";
+
+    enum Mapping { LINEAR_2047, OFFSET_4095 }
 
     String oldBrightness, oldHbm;
-    int rawMin, rawMax, uiMax;
+    Mapping mapping;
+    int uiMax;
     boolean changed;
-    boolean calibrationProfile;
     String expectedBrightness, expectedHbm;
-    Path inspectedPanel, inspectedTiming;
+    final List<String> interferenceControls = new ArrayList<>();
+
+    private BacklightDisplayProfile() {}
 
     private static String read(String path) throws IOException {
         return new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.US_ASCII).trim();
@@ -26,30 +29,42 @@ final class SovietZundamonProfile implements DisplayProfile {
         CalibrationSession.write(path, value);
     }
 
-    static int mapToRaw(int ui, int min, int max, int uiMax) {
-        if (ui == 0) return 0;
+    static Mapping mappingFor(int min, int max, int uiMax) throws IOException {
+        if (min == 2 && max == uiMax) {
+            if (max == 2047) return Mapping.LINEAR_2047;
+            // This family assumes the inspected offset-and-rounding conversion.
+            // DT limits and sysfs readback cannot independently verify that algorithm.
+            if (max == 4095) return Mapping.OFFSET_4095;
+        }
 
-        min = Math.max(1, min);
-        long numerator = (long) (ui - 1) * (max - min);
-        int raw = min + (int) ((numerator + (uiMax - 1) / 2) / (uiMax - 1));
-        return raw > 2047 ? 4095 : raw; // exact Soviet sde_connector.c guard
+        throw new IOException("This display's brightness limits are not supported.");
     }
 
-    static int uiForRaw(int target, int min, int max, int uiMax) throws IOException {
-        if (min < 0 || max < 2047 || max > 65535 || uiMax < 2 || uiMax > 65535 || min >= max) throw new IOException("Unsupported panel brightness limits");
+    static int mapToRaw(Mapping mapping, int ui) {
+        if (ui == 0) return 0;
+        if (mapping == Mapping.LINEAR_2047) return ui;
+
+        long numerator = (long) (ui - 1) * (4095 - 2);
+        int raw = 2 + (int) ((numerator + (4095 - 1) / 2) / (4095 - 1));
+        return raw > 2047 ? 4095 : raw;
+    }
+
+    static int uiForRaw(Mapping mapping, int target) throws IOException {
+        if (target < 0 || target > 2047) throw new IOException("Unsupported calibration brightness");
         if (target == 0) return 0;
 
+        int uiMax = mapping == Mapping.LINEAR_2047 ? 2047 : 4095;
         for (int ui = 1; ui <= uiMax; ui++)
-            if (mapToRaw(ui, min, max, uiMax) == target) return ui;
+            if (mapToRaw(mapping, ui) == target) return ui;
 
         throw new IOException("Raw panel brightness " + target + " cannot be represented exactly");
     }
 
-    static SovietZundamonProfile open(int x, int y, int width, int height) throws Exception {
-        SovietZundamonProfile profile = new SovietZundamonProfile();
-        profile.inspect();
+    static BacklightDisplayProfile open(int x, int y, int width, int height) throws Exception {
         if (x != 445 || y != 1931 || width != 190 || height != 190) throw new IOException("This fingerprint sensor position is not supported.");
-        profile.enableCalibration();
+
+        BacklightDisplayProfile profile = new BacklightDisplayProfile();
+        profile.inspect();
 
         return profile;
     }
@@ -62,19 +77,11 @@ final class SovietZundamonProfile implements DisplayProfile {
         oldHbm = read(BASE + "/hbm");
         if (!oldHbm.equals("0")) throw new IOException("Close other fingerprint apps and turn off sunlight mode.");
 
-        for (String name : new String[] {"force_fod_ui", "dc_dim"}) {
-            String value = read(BASE + "/" + name);
-            if (!value.equals("0")) throw new IOException("Turn off forced fingerprint illumination and DC dimming.");
-        }
-
-        Path ea = Paths.get(BASE, "msm_fb_ea_enable");
-        if (Files.exists(ea) && !read(ea.toString()).equals("0")) throw new IOException("Turn off automatic exposure adjustment.");
-
         Path panel = PanelTree.activePanel(BASE);
-        inspectedPanel = panel;
-        rawMin = PanelTree.u32(panel.resolve("qcom,mdss-dsi-bl-min-level"));
-        rawMax = PanelTree.u32(panel.resolve("qcom,mdss-dsi-bl-max-level"));
+        int rawMin = PanelTree.u32(panel.resolve("qcom,mdss-dsi-bl-min-level"));
+        int rawMax = PanelTree.u32(panel.resolve("qcom,mdss-dsi-bl-max-level"));
         uiMax = PanelTree.u32(panel.resolve("qcom,mdss-brightness-max-level"));
+        mapping = mappingFor(rawMin, rawMax, uiMax);
 
         int exported = Integer.parseInt(read("/sys/class/backlight/panel0-backlight/max_brightness"));
         if (exported != uiMax) throw new IOException("Exported backlight maximum differs from active device tree");
@@ -82,17 +89,18 @@ final class SovietZundamonProfile implements DisplayProfile {
         int old = Integer.parseInt(oldBrightness);
         if (old < 0 || old > uiMax) throw new IOException("Invalid saved brightness");
 
-        for (int raw : new int[] {1064, 1680, 2047})
-            uiForRaw(raw, rawMin, rawMax, uiMax);
+        for (int raw : new int[] {1048, 1190, 1680, 2047})
+            uiForRaw(mapping, raw);
 
         Path timing = PanelTree.commandsNode(panel);
-        inspectedTiming = timing;
+        verifyPanel(panel, timing);
 
-        for (String name : new String[] {"qcom,mdss-dsi-dispparam-hbm-fod-on-command", "qcom,mdss-dsi-dispparam-hbm-fod-off-command"}) {
-            byte[] commands = Files.readAllBytes(timing.resolve(name));
-            if (commands.length < 8 || commands.length > 4096) throw new IOException("Missing or invalid FOD HBM command set");
+        for (String name : new String[] {"force_fod_ui", "dc_dim", "msm_fb_ea_enable"}) {
+            Path path = Paths.get(BASE, name);
+            if (Files.exists(path)) interferenceControls.add(path.toString());
         }
 
+        checkInterference();
         checkManualBrightness();
     }
 
@@ -107,26 +115,29 @@ final class SovietZundamonProfile implements DisplayProfile {
         if (!"0".equals(mode)) throw new IOException("Turn off adaptive brightness before connecting");
     }
 
-    static void verifyCalibrationProfile(Path panel, Path timing, int min, int max, int uiMax) throws Exception {
-        if (!panel.getFileName().toString().equals("qcom,mdss_dsi_ss_fhd_ea8076_cmd") || min != 2 || max != 4095 || uiMax != 4095) throw new IOException("This display panel is not supported.");
+    static void verifyPanel(Path panel, Path timing) throws Exception {
+        String name = panel.getFileName().toString();
+        if (!name.equals("qcom,mdss_dsi_ss_fhd_ea8076_cmd") && !name.equals("qcom,mdss_dsi_ss_fhd_ea8076_global_cmd")) throw new IOException("This display panel is not supported.");
+
+        for (String command : new String[] {"qcom,mdss-dsi-dispparam-hbm-fod-on-command", "qcom,mdss-dsi-dispparam-hbm-fod-off-command"}) {
+            long size = Files.size(timing.resolve(command));
+            if (size < 8 || size > 4096) throw new IOException("Missing or invalid FOD HBM command set");
+        }
 
         String on = CalibrationSession.sha(timing.resolve("qcom,mdss-dsi-dispparam-hbm-fod-on-command").toString());
         String off = CalibrationSession.sha(timing.resolve("qcom,mdss-dsi-dispparam-hbm-fod-off-command").toString());
         if (!on.equals("f242904fba9da23cb1836c891b035ff7184111de0cfac0eff23149d02a89d481") || !off.equals("939098fcb898ec154d2593c58a5cce14f184a15620f1c08b8261305a7a461a62")) throw new IOException("This display panel is not supported.");
     }
 
-    void enableCalibration() throws Exception {
-        verifyCalibrationProfile(inspectedPanel, inspectedTiming, rawMin, rawMax, uiMax);
-        calibrationProfile = true;
+    void checkInterference() throws IOException {
+        for (String path : interferenceControls)
+            if (!read(path).equals("0")) throw new IOException("Turn off forced fingerprint illumination, DC dimming and exposure adjustment.");
     }
 
     public void prepare() throws Exception {
-        if (!calibrationProfile) throw new IOException("Calibration display profile not verified");
-
         checkManualBrightness();
-
-        for (String name : new String[] {"hbm", "force_fod_ui", "dc_dim"})
-            if (!read(BASE + "/" + name).equals("0")) throw new IOException("Panel state changed since preflight: " + name);
+        checkInterference();
+        if (!read(BASE + "/hbm").equals("0")) throw new IOException("Panel HBM changed since preflight");
 
         oldBrightness = read(DisplayProfiles.BRIGHTNESS);
         oldHbm = "0";
@@ -138,8 +149,6 @@ final class SovietZundamonProfile implements DisplayProfile {
     }
 
     public void apply(String value) throws Exception {
-        if (!calibrationProfile) throw new IOException("Calibration display profile not verified");
-
         switch (value) {
         case "0xF0000":
             hbm("0");
@@ -156,20 +165,13 @@ final class SovietZundamonProfile implements DisplayProfile {
             if (!read(BASE + "/hbm").equals("0")) throw new IOException("Unexpected HBM during normal backlight stage");
             break;
 
-        case "0xD00690":
-            level(1680);
-            break;
-
-        case "0xD007FF":
-            level(2047);
-            break;
-
         case "0xD00418":
-            level(1064);
-            break;
-
+        case "0xD004A6":
+        case "0xD00690":
+        case "0xD007FF":
         case "0xD00000":
-            level(0);
+            // Xiaomi's panel_disp_param_send_lock extracts the low 13 bits unchanged.
+            level(Integer.parseInt(value.substring(4), 16));
             break;
 
         default:
@@ -178,7 +180,8 @@ final class SovietZundamonProfile implements DisplayProfile {
     }
 
     public void verifyState() throws Exception {
-        if (!calibrationProfile || expectedBrightness == null || expectedHbm == null) throw new IOException("Calibration display state not initialized");
+        if (expectedBrightness == null || expectedHbm == null) throw new IOException("Calibration display state not initialized");
+        checkInterference();
         if (!expectedBrightness.equals(read(DisplayProfiles.BRIGHTNESS)) || !expectedHbm.equals(read(BASE + "/hbm"))) throw new IOException("Panel brightness or HBM changed during the settling interval");
     }
 
@@ -193,7 +196,7 @@ final class SovietZundamonProfile implements DisplayProfile {
 
     void level(int raw) throws Exception {
         changed = true;
-        int ui = uiForRaw(raw, rawMin, rawMax, uiMax);
+        int ui = uiForRaw(mapping, raw);
         write(DisplayProfiles.BRIGHTNESS, Integer.toString(ui));
 
         String actual = read(DisplayProfiles.BRIGHTNESS);
