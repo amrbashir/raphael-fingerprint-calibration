@@ -17,7 +17,7 @@ val versionProperties = Properties().apply {
 
 version = versionProperties.getProperty("version")
 val parts = Regex("^(\\d{1,6})\\.(\\d{1,2})(?:\\.(\\d{1,2}))?$").matchEntire(version.toString())?.groupValues ?: error("Version must be MAJOR.MINOR or MAJOR.MINOR.PATCH")
-val moduleVersionCode = parts[1].toLong() * 10000 + parts[2].toLong() * 100 + (parts[3].toLongOrNull() ?: 0)
+val moduleVersionCode = 1 + parts[1].toLong() * 10000 + parts[2].toLong() * 100 + (parts[3].toLongOrNull() ?: 0)
 
 require(moduleVersionCode in 1..Int.MAX_VALUE) { "Version code must fit in a positive signed 32-bit integer" }
 
