@@ -15,8 +15,8 @@ You'll need Android 9 or newer and flesh-coloured and black calibration flats.
 4. Tap the module's **Action** button and follow the calibration steps.
 
 > [!NOTE]
-> Supported kernels must expose stock `disp_param` controls or a compatible 2047/4095 backlight and HBM implementation. Compatibility depends on the installed kernel and display, not the ROM name. If it doesn't work on your device, [open an issue](https://github.com/amrbashir/raphael-fingerprint-calibration/issues/new) with your ROM and kernel versions and the error you encountered.
+> Tested on LineageOS 24 with the `Soviet-Zundamon-v1.1` kernel. Supported kernels must expose stock `disp_param` controls or a compatible 2047/4095 backlight and HBM implementation. Compatibility depends on the installed kernel and display. If it doesn't work on your device, [open an issue](https://github.com/amrbashir/raphael-fingerprint-calibration/issues/new) with your ROM and kernel versions and the error you encountered.
 
 ## License
 
-Original project code is licensed under [MIT](LICENSE). Bundled Xiaomi/Goodix binaries and code derived from them are excluded from this license.
+Licensed under [MIT](LICENSE). Bundled Xiaomi/Goodix binaries and code derived from them are excluded from this license.
